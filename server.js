@@ -6,24 +6,15 @@ var OAuth2 = OAuth.OAuth2;
 var app = express();
 app.use(express.bodyParser());
 
-var twitterConsumerKey = '7Z7lbRsLWqVWzU7Ncg7Klw';
-var twitterConsumerSecret = ' x0F0HC4uoUnjWuMfFbZZU87WMf83UCcSlGDfMEQQsP0';
-var oauth2 = new OAuth2(twitterConsumerKey,
-  twitterConsumerSecret, 
-  'https://api.twitter.com/', 
+var oauth = new OAuth.OAuth(
+  'https://api.twitter.com/oauth/request_token',
+  'https://api.twitter.com/oauth/access_token',
+  '7Z7lbRsLWqVWzU7Ncg7Klw',
+  'x0F0HC4uoUnjWuMfFbZZU87WMf83UCcSlGDfMEQQsP0',
+  '1.0A',
   null,
-  'oauth2/token', 
-  null);
-oauth2.getOAuthAccessToken(
-  '',
-  {'grant_type':'client_credentials'},
-  function (e, access_token, refresh_token, results){
-  console.log('bearer: ',access_token);
-  done();
-});
-
-
-/*** OLD STUFF */
+  'HMAC-SHA1'
+);
 
 var generateUuid = function(){
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -33,18 +24,101 @@ var generateUuid = function(){
 };
 
 app.use(express.static(__dirname + '/public'));
+var commets = {};
+var workingData = {};
+app.get('/data', function(req,res){
+  commet = commets[req.sessionID] = commets[req.sessionID] || {};
+  commet.res = res;
+  if(commet.toSend.length > 0){
+    res.send(commet.toSend);
+    commet.toSend = [];
+  }else{
+    setTimeout(function(){
+      res.send([]);
+      commet.res = undefined;
+    },30000);
+  }
+})
 
-app.get('/stats', function(req, res){
-  console.log('runnin: ' + req.query.id);
-  var obj = bag[req.query.id]
-  obj.ans = obj.fun.apply(null, obj.args);
-  if(!(typeof obj.ans == "object" || typeof obj.ans == "array"))
-    obj.ans = [obj.ans];
-  obj.dependents.map(function(d){
-    d.obj.args[d.argIndex] = obj.ans[d.retKey];
-  });
+var commetSend = function(sessionId,data){
+  commet = commets[sessionId] = commets[sessionId] || {};
+  if(commet.res){
+    res.send([data]);
+    commet.res = undefined
+  }else{
+    commet.toSend = commet.toSend || []
+    commet.toSend.push(data);
+  }
+};
+
+app.post('/set_twitter_user', function(req, res){
+  var tweets = [];
+  var processTweets = function (e, data, res){
+    console.log("processing tweets");
+    if (e) console.error(e);
+    var timelineSec = JSON.parse(data);
+    tweets = tweets.concat(timelineSec);
+    if(timelineSec.length > 1){
+      // try to get mo
+      console.log("tweet: "+timelineSec[0].text);
+      oauth.get(
+        'https://api.twitter.com/1.1/statuses/user_timeline.json?count=200&screen_name='+req.body.username+'&max_id='+timelineSec[timelineSec.length-1].id_str,
+        '2334327559-7nTCMJCfzkxxpGzaL5Bo8e3khaCasdJiB0g7AUC', //test user token
+        'wtY0moheFIah1wSOOzKOLpf1Fc5WLTsoKmMnurFpoy5RC', //test user secret            
+        processTweets
+        );
+    }else{
+      commetSend(req.sessionID,{type:'STATUS', message:"done grabbing tweets"});
+      setTimeout(function(){
+        console.log("thinkin on da tweets");
+        var wd = workingData[req.sessionID] = {};
+        var freqMap = wd.freqMap = {};
+        var freqArr = wd.freqArr = [];
+        wd.tweets = tweets;
+        var text = tweets.reduce(function(p,tweet){
+          return p + tweet.text + ' ';
+        },'');
+        var words = String(text).match(/[\w']+/g);
+        var distinctWords = 0;
+        words.map(function(w){
+          w = w.toLowerCase();
+          if(w.match(/^\d+$/))return;
+          if(freqMap[w]){
+            //console.log("saw " + w+ " again.");
+            freqMap[w]++;
+          }else{
+            freqMap[w] = 1;
+            distinctWords++;
+          }
+        });
+        for(word in freqMap){
+          freqMap[word] = {
+            freq: freqMap[word]/distinctWords*100,
+            count: freqMap[word]
+          }
+          if(excludes.reduce(function(p, w){
+                 return p || word.match(new RegExp("^"+w+"$"));
+          },false)) continue;
+          freqArr.push({
+            word: word,
+            freq:freqMap[word].freq
+          });
+        }
+        freqArr.sort(function(a,b){
+          return a.freq < b.freq?1:-1;
+        });
+        commetSend(req.sessionID,{type:'STATUS', message:"tweets Processed"});
+      },0)
+    }
+  };
+  oauth.get(
+    'https://api.twitter.com/1.1/statuses/user_timeline.json?count=200&screen_name='+req.body.username,
+    '2334327559-7nTCMJCfzkxxpGzaL5Bo8e3khaCasdJiB0g7AUC', //test user token
+    'wtY0moheFIah1wSOOzKOLpf1Fc5WLTsoKmMnurFpoy5RC', //test user secret            
+    processTweets
+    );
   res.send({
-    ans: obj.ans
+    id: "getinIT"
   });
 });
 
@@ -59,9 +133,12 @@ app.post('/connect', function(req, res){
   res.send({msg:"yay"});
 });
 
-app.get('/all', function(req, res){
-  res.send(bag);
+app.post('/command', function(req, res){
+  var wd = workingData[req.sessionID];
+  var word = req.body.command
+  res.send(wd.freqMap[word]?wd.freqMap[word].freq.toFixed(6)+"/"+wd.freqMap[word].count + " :" + word:'!NOT FOUND!');
 });
+
 
 app.listen(8080);
 
@@ -69,7 +146,12 @@ process.stdin.resume();
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', function(word) {
   word = word.trim().replace(/(\r\n|\n|\r)/gm,"");
-  console.log(freqMap[word]?freqMap[word].freq.toFixed(6)+"/"+freqMap[word].count:'NOT FOUND');
+  var wd;
+  for(sid in workingData){
+    wd = workingData[sid];
+    break;
+  }
+  console.log(wd.freqMap[word]?wd.freqMap[word].freq.toFixed(6)+"/"+wd.freqMap[word].count:'NOT FOUND');
   /*if( == 's'){
     fs.writeFile("savedObjs.json", JSON.stringify(bag), function(err) {
       if(err) {
