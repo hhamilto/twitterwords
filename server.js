@@ -4,7 +4,10 @@ var fs = require('fs');
 var OAuth = require('oauth');
 var OAuth2 = OAuth.OAuth2;
 var app = express();
+
 app.use(express.bodyParser());
+app.use(express.cookieParser());
+app.use(express.session({secret: 'HAYGUYZIMMASECRET'}));
 
 var oauth = new OAuth.OAuth(
   'https://api.twitter.com/oauth/request_token',
@@ -24,14 +27,18 @@ var generateUuid = function(){
 };
 
 app.use(express.static(__dirname + '/public'));
-var commets = {};
 var workingData = {};
-app.get('/data', function(req,res){
+
+var commets = {};
+app.get('/commet', function(req,res){
   commet = commets[req.sessionID] = commets[req.sessionID] || {};
+  commet.toSend = commet.toSend || [];
   commet.res = res;
   if(commet.toSend.length > 0){
+    console.log("shitballs, we got data here! SENDIN IT.");
     res.send(commet.toSend);
     commet.toSend = [];
+    commet.res = undefined;
   }else{
     setTimeout(function(){
       res.send([]);
@@ -41,9 +48,11 @@ app.get('/data', function(req,res){
 })
 
 var commetSend = function(sessionId,data){
+  console.log('commet sendin: ' + data + " to " + sessionId);
   commet = commets[sessionId] = commets[sessionId] || {};
+  console.log('res = ' + commet.res);
   if(commet.res){
-    res.send([data]);
+    commet.res.send([data]);
     commet.res = undefined
   }else{
     commet.toSend = commet.toSend || []
@@ -52,74 +61,59 @@ var commetSend = function(sessionId,data){
 };
 
 app.post('/set_twitter_user', function(req, res){
-  var tweets = [];
+  req.body.username = req.body.username[0]=='@'?req.body.username.slice(1):req.body.username;
+  var baseCompletePercent = 10,
+      finalPercent = 80,
+      incrementPercent = 10;
+  oauth.get(
+        'https://api.twitter.com/1.1/users/show.json?screen_name='+req.body.username,
+        '2334327559-7nTCMJCfzkxxpGzaL5Bo8e3khaCasdJiB0g7AUC', //test user token
+        'wtY0moheFIah1wSOOzKOLpf1Fc5WLTsoKmMnurFpoy5RC', //test user secret            
+        function(e, data){
+          if(e){
+            res.send({
+              error: "Couldn't find the user"
+            });
+            return;
+          }
+          data = JSON.parse(data);
+          var numReqsNeeded = Math.ceil(data.statuses_count/200);
+          incrementPercent = (finalPercent-baseCompletePercent)/numReqsNeeded;
+          httpTweets();
+          res.send(data);
+        });
+
+  var tweets = [], timelineSec;
   var processTweets = function (e, data, res){
     console.log("processing tweets");
     if (e) console.error(e);
-    var timelineSec = JSON.parse(data);
+    timelineSec = JSON.parse(data);
     tweets = tweets.concat(timelineSec);
     if(timelineSec.length > 1){
       // try to get mo
       console.log("tweet: "+timelineSec[0].text);
-      oauth.get(
-        'https://api.twitter.com/1.1/statuses/user_timeline.json?count=200&screen_name='+req.body.username+'&max_id='+timelineSec[timelineSec.length-1].id_str,
+      commetSend(req.sessionID,{
+        type:'STATUS',
+        task: 'fetch tweets',
+        status: 'PROGRESS',
+        percentDone: baseCompletePercent+=incrementPercent});
+      httpTweets();
+    }else{
+      commetSend(req.sessionID,{
+        type:'STATUS',
+        task: 'fetch tweets',
+        status: 'PROGRESS',
+        percentDone: finalPercent,
+        message:"Grabbed Tweets"});
+      analizeTweets(req.sessionID, tweets);
+    }
+  };
+  var httpTweets = function(){oauth.get(
+        'https://api.twitter.com/1.1/statuses/user_timeline.json?count=200&screen_name='+req.body.username+(timelineSec?'&max_id='+timelineSec[timelineSec.length-1].id_str:''),
         '2334327559-7nTCMJCfzkxxpGzaL5Bo8e3khaCasdJiB0g7AUC', //test user token
         'wtY0moheFIah1wSOOzKOLpf1Fc5WLTsoKmMnurFpoy5RC', //test user secret            
         processTweets
-        );
-    }else{
-      commetSend(req.sessionID,{type:'STATUS', message:"done grabbing tweets"});
-      setTimeout(function(){
-        console.log("thinkin on da tweets");
-        var wd = workingData[req.sessionID] = {};
-        var freqMap = wd.freqMap = {};
-        var freqArr = wd.freqArr = [];
-        wd.tweets = tweets;
-        var text = tweets.reduce(function(p,tweet){
-          return p + tweet.text + ' ';
-        },'');
-        var words = String(text).match(/[\w']+/g);
-        var distinctWords = 0;
-        words.map(function(w){
-          w = w.toLowerCase();
-          if(w.match(/^\d+$/))return;
-          if(freqMap[w]){
-            //console.log("saw " + w+ " again.");
-            freqMap[w]++;
-          }else{
-            freqMap[w] = 1;
-            distinctWords++;
-          }
-        });
-        for(word in freqMap){
-          freqMap[word] = {
-            freq: freqMap[word]/distinctWords*100,
-            count: freqMap[word]
-          }
-          if(excludes.reduce(function(p, w){
-                 return p || word.match(new RegExp("^"+w+"$"));
-          },false)) continue;
-          freqArr.push({
-            word: word,
-            freq:freqMap[word].freq
-          });
-        }
-        freqArr.sort(function(a,b){
-          return a.freq < b.freq?1:-1;
-        });
-        commetSend(req.sessionID,{type:'STATUS', message:"tweets Processed"});
-      },0)
-    }
-  };
-  oauth.get(
-    'https://api.twitter.com/1.1/statuses/user_timeline.json?count=200&screen_name='+req.body.username,
-    '2334327559-7nTCMJCfzkxxpGzaL5Bo8e3khaCasdJiB0g7AUC', //test user token
-    'wtY0moheFIah1wSOOzKOLpf1Fc5WLTsoKmMnurFpoy5RC', //test user secret            
-    processTweets
-    );
-  res.send({
-    id: "getinIT"
-  });
+        )};
 });
 
 app.post('/connect', function(req, res){
@@ -136,7 +130,22 @@ app.post('/connect', function(req, res){
 app.post('/command', function(req, res){
   var wd = workingData[req.sessionID];
   var word = req.body.command
-  res.send(wd.freqMap[word]?wd.freqMap[word].freq.toFixed(6)+"/"+wd.freqMap[word].count + " :" + word:'!NOT FOUND!');
+  if(word[0] == '/'){
+    command = word.slice(1).match(/\w+/g);
+    if(command[0] == 'help'){
+      res.send("*** COMMAND LISTING ***\n"+
+               " /help     - Displays this list \n"+
+               " /top [n]  - Displays top n words. defaults to top 10 and excludes 100 most common words in english \n"+
+               "*** END COMMAND LIST***");
+    }else if(command[0] == 'top'){
+      command[1] = command[1] || 10;
+      res.send(wd.freqArr.slice(0,command[1]).reduce(function(p,c,i){
+        return p+(i+1)+") "+ c.word + ": " +c.freq.toFixed(6)+"/"+c.count +'\n'
+      },'TOP '+command[1]+' WORDS:\n'));
+    }
+  }else{
+    res.send(wd.freqMap[word]?wd.freqMap[word].freq.toFixed(6)+"/"+wd.freqMap[word].count + " :" + word:'!NOT FOUND :' + word);
+  }
 });
 
 
@@ -146,76 +155,73 @@ process.stdin.resume();
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', function(word) {
   word = word.trim().replace(/(\r\n|\n|\r)/gm,"");
-  var wd;
-  for(sid in workingData){
-    wd = workingData[sid];
-    break;
-  }
-  console.log(wd.freqMap[word]?wd.freqMap[word].freq.toFixed(6)+"/"+wd.freqMap[word].count:'NOT FOUND');
-  /*if( == 's'){
-    fs.writeFile("savedObjs.json", JSON.stringify(bag), function(err) {
-      if(err) {
-          console.log(err);
-      } else {
-          console.log("The file was saved!");
-      }
-    });   
-  }*/
 });
 
 var freqMap = {};
 var freqArr = [];
 
-// readin a save file if present
-if(process.argv[2]){
-  /*fs.readFile(process.argv[2], function (err, data) {
-    if (err) throw err;
-    var words = String(data).match(/[\w']+/g);
-    var distinctWords = 0;
-    words.map(function(w){
-      w = w.toLowerCase();
-      if(w.match(/^\d+$/))return;
-      if(freqMap[w]){
-        //console.log("saw " + w+ " again.");
-        freqMap[w]++;
-      }else{
-        freqMap[w] = 1;
-        distinctWords++;
-      }
-    });
-    for(word in freqMap){
-      freqMap[word] = {
-        freq: freqMap[word]/distinctWords*100,
-        count: freqMap[word]
-      }
-      if(excludes.reduce(function(p, w){
-             return p || word.match(new RegExp("^"+w+"$"));
-      },false)) continue;
-      freqArr.push({
-        word: word,
-        freq:freqMap[word].freq
-      });
-    }
-
-    freqArr.sort(function(a,b){
-      return a.freq < b.freq?1:-1;
-    });
-    console.log("num words = " + freqArr.length);
-    freqArr.slice(0,20).map(function(w){
-      console.log(w.freq + " " + w.word);
-    });
-    /*console.log(freqArr[0].word);
-    console.log(freqArr[1].word);
-    console.log(freqMap["sarina"]);*/
-
-
-    //console.log('loaded the fuck out of ' + process.argv[2]);
-  //});
+var analizeTweets = function(sessionID, tweets){
+  setTimeout(function(){
+      try{
+        console.log("thinkin on da tweets");
+        var wd = workingData[sessionID] = {};
+        var freqMap = wd.freqMap = {};
+        var freqArr = wd.freqArr = [];
+        var dups = {};
+        tweets = tweets.filter(function(t){
+          return dups[t.id_str]?false:dups[t.id_str]=true;
+        });
+        wd.tweets = tweets;
+        var text = tweets.reduce(function(p,tweet){
+          return p + tweet.text + ' ';
+        },'');
+        var words = String(text).match(/[\w']+/g);
+        var distinctWords = 0;
+        words.map(function(w){
+          w = w.toLowerCase();
+          if(w.match(/^\d+$/))return;
+          if(freqMap[w]){
+            freqMap[w]++;
+          }else{
+            freqMap[w] = 1;
+            distinctWords++;
+          }
+        });
+        for(word in freqMap){
+          freqMap[word] = {
+            freq: freqMap[word]/distinctWords*100,
+            count: freqMap[word]
+          }
+          if(excludes.reduce(function(p, w){
+                 return p || word.match(new RegExp("^"+w+"$"));
+          },false)) continue;
+          freqArr.push({
+            word: word,
+            freq:freqMap[word].freq,
+            count:freqMap[word].count
+          });
+        }
+        freqArr.sort(function(a,b){
+          return a.freq < b.freq?1:-1;
+        });
+        commetSend(sessionID,{
+          type:'STATUS',
+          task: 'fetch tweets',
+          status: 'DONE',
+          percentDone: 100,
+          message:"Tweets Processed"});
+        }catch(e){
+        commetSend(sessionID,{
+          type:'STATUS',
+          task: 'fetch tweets',
+          status: 'ERROR',
+          percentDone: 100,
+          message:"couldn't process tweets. perhaps the user didn't have any?"});
+        }
+      },0)
 }
 
-
-console.log('Listening on port 80');
-
+console.log('Listening on port 8080');
 
 var excludes = [
 
