@@ -1,35 +1,43 @@
 <html>
-    <title>AITTADTS</title>
+    <title>Twitter word usage analyzer</title>
     <link href="http://netdna.bootstrapcdn.com/bootstrap/3.1.0/css/bootstrap.min.css" rel="stylesheet"/>
     <link href="css/main.css" rel="stylesheet" />
 <body>
-<form id="setup" class="form-inline" role="form" onsubmit="return false;">
-    <div id="user-profile-pic" class="form-group">
-        <img src="https://pbs.twimg.com/profile_images/54029868/orly_bigger.jpg" />
-    </div>
-    <div class="form-group">
-        <input class="form-control" id="username" placeholder="twitteruser"></input>
-    </div>
-    <button class="btn btn-success" id="submit">Get It!</button>
-    <div class="checkbox">
-        <label>
-            <input type="checkbox"> Save the whales ($1)
-        </label>
-    </div>
-    <div class="form-group" id="numTweets">
-        <label class="control-label">Number of tweets: </label><span class="data-val"> a whole bunch</span>
-    </div>
-</form>
-<div id='getitbar' class="progress progress-striped active">
-  <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%;">
-    <span class="sr-only">0% Complete</span>
-  </div>
-</div>
+<div class="container">
+    <div class="row">
+        <form id="setup" class="form-inline" role="form" onsubmit="return false;">
+            <div id="user-profile-pic" class="form-group">
+                <img src="https://pbs.twimg.com/profile_images/54029868/orly_bigger.jpg" />
+            </div>
+            <div class="form-group">
+                <input class="form-control" id="username" placeholder="twitteruser"></input>
+            </div>
+            <button class="btn btn-success" id="submit">Load Tweets</button>
+            <div class="form-group" id="numTweets">
+                <label class="control-label">Number of tweets: </label><span class="data-val"> a whole bunch</span>
+            </div>
+        </form>
 
-<pre id="console">
+        <div id='getitbar' class="progress progress-striped active" style="display: none;">
+            <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%;">
+            <span class="sr-only">0% Complete</span>
+        </div>
+    </div>
+    <div class="row">
+        <p>
+            Welcome to the Twitter word usage analyzer. Enter an Twitter username above, and this application will retrieve all the users Tweets, then run frequency analysis on them. 
+        </p>
+        <p>
+            After the Tweets are loaded, type a word to see how often it was used, or type /help for more options.
+        </p>
+        <pre id="console">
 </pre>
-<input class="form-control" id="command" placeholder="Try entering a word you are curious about... or /help for command list."></input>
-
+        <input class="form-control" id="command" placeholder="Try entering a word you are curious about... or /help for command list."></input>
+    </div>
+    <div class="row">
+        <footer>Made by <a href="https://github.com/hhamilto">Hurricane Hamilton</a>. Not affiliated with Twitter in any way.</footer>
+    </div>
+</div>
 <script src="jquery-1.10.2.min.js"></script>
 <script src="/dashboard.js"></script>
 </body>

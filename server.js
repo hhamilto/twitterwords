@@ -2,12 +2,25 @@
 var express = require('express');
 var fs = require('fs');
 var OAuth = require('oauth');
+var bodyParser = require('body-parser')
+var cookieParser = require('cookie-parser')
+var session = require('express-session')
 var OAuth2 = OAuth.OAuth2;
 var app = express();
 
-app.use(express.bodyParser());
-app.use(express.cookieParser());
-app.use(express.session({secret: 'HAYGUYZIMMASECRET'}));
+var generateUuid = function(){
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random()*16|0, v = c == 'x' ? r : (r&0x3|0x8);
+        return v.toString(16);
+    });
+};
+
+app.use(bodyParser.json());
+app.use(cookieParser());
+app.use(session({
+	genid: generateUuid,
+	secret: 'HAYGUYZIMMASECRET'
+}));
 
 var oauth = new OAuth.OAuth(
   'https://api.twitter.com/oauth/request_token',
@@ -19,12 +32,6 @@ var oauth = new OAuth.OAuth(
   'HMAC-SHA1'
 );
 
-var generateUuid = function(){
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        var r = Math.random()*16|0, v = c == 'x' ? r : (r&0x3|0x8);
-        return v.toString(16);
-    });
-};
 
 app.use(express.static(__dirname + '/public'));
 var workingData = {};
@@ -40,7 +47,7 @@ app.get('/commet', function(req,res){
     commet.toSend = [];
     commet.res = undefined;
   }else{
-    setTimeout(function(){
+    commet.resHardExpireTimeout = setTimeout(function(){
       res.send([]);
       commet.res = undefined;
     },30000);
@@ -53,6 +60,8 @@ var commetSend = function(sessionId,data){
   console.log('res = ' + commet.res);
   if(commet.res){
     commet.res.send([data]);
+    clearTimeout(commet.resHardExpireTimeout)
+    commet.resHardExpireTimeout = undefined
     commet.res = undefined
   }else{
     commet.toSend = commet.toSend || []
@@ -91,7 +100,7 @@ app.post('/set_twitter_user', function(req, res){
     tweets = tweets.concat(timelineSec);
     if(timelineSec.length > 1){
       // try to get mo
-      console.log("tweet: "+timelineSec[0].text);
+      console.log("tweet: "+timelineSec[0].text+'\n.\n');
       commetSend(req.sessionID,{
         type:'STATUS',
         task: 'fetch tweets',
@@ -149,13 +158,16 @@ app.post('/command', function(req, res){
 });
 
 
-app.listen(8080);
+app.listen(3000);
 
-process.stdin.resume();
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', function(word) {
-  word = word.trim().replace(/(\r\n|\n|\r)/gm,"");
-});
+if(process.argv[3]){
+
+  process.stdin.resume();
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', function(word) {
+    word = word.trim().replace(/(\r\n|\n|\r)/gm,"");
+  });
+}
 
 var freqMap = {};
 var freqArr = [];
@@ -221,7 +233,7 @@ var analizeTweets = function(sessionID, tweets){
       },0)
 }
 
-console.log('Listening on port 8080');
+console.log('Listening on port 3000');
 
 var excludes = [
 

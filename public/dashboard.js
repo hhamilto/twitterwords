@@ -15,9 +15,10 @@ $(document).ready(function(){
         $.ajax({
             url: '/set_twitter_user',
             method: 'POST',
-            data: {
+            data: JSON.stringify({
                 username: $('#username').val()
-            },
+            }),
+            contentType: 'application/json',
             dataType:'json'
         }).done(function(data){
             if(data.error){
@@ -26,7 +27,7 @@ $(document).ready(function(){
             }
             $('#numTweets .data-val').text(' '+data.statuses_count);
             $('#user-profile-pic img').attr('src',data.profile_image_url);
-            $('#getitbar > .progress-bar').css('width','10%');//add the whole aria thing
+            $('#getitbar > .progress-bar').css('width','10%');//XXX add the whole aria thing
             $('#getitbar').slideDown();
             $('#command').prop('disabled', true);
             dfdPen.clear();
@@ -51,9 +52,10 @@ $(document).ready(function(){
                 url:'/command',
                 method: 'POST',
                 cache: false,
-                data:{
+                data: JSON.stringify({
                     command: $('#command').val()
-                },
+                }),
+                contentType: 'application/json',
                 dataType: 'text'
             }).done(function(data){
                 printToC(data);
